@@ -7,6 +7,8 @@ from aiogram.dispatcher import FSMContext
 
 import re
 import redis
+import ctypes
+import glob
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -29,6 +31,17 @@ URL = 'https://candle.fmph.uniba.sk/'
 # Path to chromedriver
 PATH = r'/opt/WebDriver/bin/chromedriver'
 
+# Initialize libfile to use C++ DB functions
+libfile = glob.glob('build/lib*/*.so')[0]
+lib = ctypes.CDLL(libfile)
+
+lib.createTable.restype = ctypes.c_void_p
+lib.saveToDB.restype = ctypes.c_void_p
+
+lib.saveToDB.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+lib.createTable.argtypes = [ctypes.c_void_p]
+
+
 # Initialize webdriver options
 service = Service(PATH)
 options = webdriver.ChromeOptions()
@@ -44,6 +57,9 @@ logger = Logger.with_default_handlers(name='my-logger')
 
 # Initialize redis
 r = redis.Redis(host='localhost', port=6379, db=0)
+
+# Create table in the database if it doesn't exist
+lib.createTable(None)
 
 
 # Check if redis is connected
@@ -70,8 +86,7 @@ class Menu(StatesGroup):
     group = State()
     teacher = State()
     audience = State()
-
-
+    
 
 class StartMenu:
     """Create the first menu with three buttons 'Schedule', 'About', 'Help'"""
@@ -98,7 +113,6 @@ class ScheduleMenu:
 @dp.message_handler(commands='start')
 async def process_start_command(message: types.Message):
     # Create table in the database if it doesn't exist
-    await create_table()
 
     logger.info('User {} started the bot'.format(message.from_user.id))
 
@@ -166,22 +180,20 @@ async def process_help(message: types.Message, state: FSMContext):
 async def process_group(message: types.Message, state: FSMContext):
     logger.info('Processing group {}'.format(message.text))
 
-    try:
+    # try:
         # Get the url of the group
-        url = URL + f'kruzky/{message.text}.csv'
-
-        # Get data from the cache if it exists
-        get_data('group', message.text, DRIVER, url, r)
-        await save_to_db(url, message.from_user.first_name)
-
-        logger.info('Group request was saved to database')
-        logger.info('Group {} was cached successfully'.format(message.text))
-
-        await message.reply_document(open('schedule.html', 'rb'))
-    except IndexError:
-        logger.info('Group {} was not found'.format(message.text))
-        await message.reply('Группа не найдена')
-    await Menu.schedule.set()
+    url = URL + f'kruzky/{message.text}.csv'
+    # Get data from the cache if it exists
+    get_data('group', message.text, DRIVER, url, r)
+    await save_to_db(url, message.from_user.first_name)
+    logger.info('Group request was saved to database')
+    logger.info('Group {} was cached successfully'.format(message.text))
+    await message.reply_document(open('schedule.html', 'rb'))
+        # await Menu.schedule.set()
+    # except IndexError:
+    #     logger.info('Group {} was not found'.format(message.text))
+    #     await message.reply('Группа не найдена')
+    # await Menu.schedule.set()
 
 # Handler for the teacher
 @dp.message_handler(state=Menu.teacher)
